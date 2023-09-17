@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<title>Activation function visualizer</title>
+	<style type="text/css">
+		/* color scheme */
+		body { color: #000; background: #eee; }
+		a:link { color: #06f; }
+		a:visited { color: #609; }
+		a:hover { color: #9cf; }
+		a:active { color: #fc0; }
+		input[type="text"], textarea { color: #000; background: #fff; border: 1px solid #999;}
+		@media (prefers-color-scheme: dark) {
+			body { color: #ddd; background: #000; }
+			a:link { color: #39f; }
+			a:visited { color: #93f; }
+			a:hover { color: #9cf; }
+			a:active { color: #fc0; }
+			input[type="text"], textarea { color: #fff; background: #333; border: 1px solid #666;}
+		}
+		body { text-align: center; }
+		/* form element spacing */
+		form > div { margin-bottom: 0.5em; }
+		input { display: inline-block; vertical-align: middle; }
+		label + input[type="text"], input[type="text"] + label { margin-left: 0.25em; }
+		/* form element styling */
+		input[type="text"], textarea { border-radius: 0.1em; }
+		label {
+			display: inline-block; vertical-align: middle;
+			font-size: 200%;
+		}
+		#reroll, #playpause {
+			font-size: 200%;
+			line-height: 1em;
+			padding: 0.1em 0.25em;
+			border-radius: 1em;
+			border-width: 0.2em;
+		}
+		/* layout hacks */
+		#canvascontainer {
+			width: 300px; height: 300px;
+			position: relative;
+			margin: 0em auto;
+		}
+		#canvascontainer > canvas { position: absolute; left: 0px; top: 0px; }
+	</style>
+	<script type="text/javascript" src="nn.js"></script>
+	<script type="text/javascript" src="jquery-1.11.3.min.js"></script>
+	<script type="text/javascript">
+		$(document).ready(function () {
+			function dist2(v, w) {
+				return v.reduce((s, x, i) => { var d = x - w[i]; return s + d * d; }, 0);
+			}
+
+			var dimension = 1;
+			window.net = new NN.Net(1, [8, 8], 1, NN.relu, 1);
+			var momentum = net.zerograd();
+			var energy = net.zerograd();  // curvature? bumpiness?
+			var momentum_newness = 1;
+			var energy_newness = 1;
+			var ref = function (x) { return x; }
+			window.handles2d = null;
+			var mousex = 0;
+			var mousey = 0;
+
+			var playing = false;
+			var frame_is_queued = false;
+			var step_count = 0;
+			function requestFrame() {
+				if (frame_is_queued) { return; }
+				window.requestAnimationFrame(frame);
+				frame_is_queued = true;
+			}
+			$('#playpause').on('click', function (e) {
+				e.preventDefault();
+				playing = !playing;
+				if (playing) {
+					$(this).html('&#x23f8;');
+					requestFrame();
+				} else {
+					$(this).html('&#x23ef;');  // 2bc8 is plain play
+				}
+			});
+
+			$('#canvascontainer').on('mousemove', function (e) {
+				var target = $('#canvascontainer');
+				var offset = target.offset();
+				var radius = (dimension == 2) ? 1 : 2;
+				mousex = (e.pageX - offset.left) / target.width() * 2 * radius - radius;
+				mousey = (e.pageY - offset.top) / target.height() * 2 * radius - radius;
+			});
+
+			function updateTarget() {
+				var f = new Function('x', $('#target_function').val());
+				try {
+					if (!isFinite(f(-0.10001)) || !isFinite(f(0.10001))) {
+						return;
+					}
+				} catch (err) {
+					return;
+				}
+				if (dimension != 1) {
+					$('#main2d').css('display', 'none');
+					$('#main1d').css('display', 'block');
+					dimension = 1;
+					reroll();
+				}
+				ref = (v) => [f(v[0])];
+				requestFrame();
+			}
+			$('#target_function').on('change', updateTarget);
+
+			function reroll() {
+				layerstring = '[' + $('#layers').val() + ']';
+				try {
+					layers = JSON.parse(layerstring);
+				} catch {  // TODO catch just JSON parse errors
+					window.alert('Unparseable: ' + layerstring);
+					return;
+				}
+				if (!(layers instanceof Array)
+					|| layers.some((x) => typeof x != "number"))
+				{
+					window.alert('Malformed: ' + layerstring);
+					return;
+				}
+				activation_str = $('#activation').val();
+				if (!NN.hasOwnProperty(activation_str)) {
+					window.alert('Unknown activation function: ' + activation_str);
+					return;
+				}
+				step_count = 0;
+				net = new NN.Net(
+					dimension, layers, (dimension == 2) ? 4 : 1,
+					NN[activation_str], parseFloat($('#init_scale').val()));
+				momentum = net.zerograd();
+				energy = net.zerograd();
+				momentum_newness = energy_newness = 1;
+				if (dimension == 2) {
+					handles2d = prep_2d();
+				}
+			}
+			$('#reroll').on('click', function (e) {
+				e.preventDefault();
+				reroll();
+				requestFrame();
+			});
+
+			$('#image_upload').on('change', function () {
+				if (!this.files.length) { return; }
+				var url = window.URL.createObjectURL(this.files[0]);
+				var i = new Image();
+				$(i).on('error', function () {
+					console.log('Failed to load image');
+				})
+				$(i).on('load', function () {
+					// extract image data
+					var ctmp = $('#image_upload_view')[0];
+					ctmp.width = $('#main2d')[0].width;
+					ctmp.height = $('#main2d')[0].height;
+					var aspect = (i.width || 1) / (i.height || 1);
+					var c = ctmp.getContext('2d');
+					if (aspect > 1) {
+						c.drawImage(i,
+							0, ctmp.height * (1 - 1 / aspect) / 2,
+							ctmp.width, ctmp.height / aspect);
+					} else {
+						c.drawImage(i,
+							ctmp.width * (1 - aspect) / 2, 0,
+							ctmp.width * aspect, ctmp.height);
+					}
+					var image_data = c.getImageData(0, 0, ctmp.width, ctmp.height);
+					// set up
+					if (dimension != 2) {
+						$('#main2d').css('display', 'block');
+						$('#main1d').css('display', 'none');
+						dimension = 2;
+						reroll();
+					}
+					ref = function (x) {
+						var imgx = Math.min(Math.max(0, Math.floor((0.5 + 0.5 * x[0]) * ctmp.width)), ctmp.width - 1);
+						var imgy = Math.min(Math.max(0, Math.floor((0.5 - 0.5 * x[1]) * ctmp.height)), ctmp.height - 1);
+						var idx = 4 * (ctmp.width * imgy + imgx);
+						return [
+							image_data.data[idx] * 2 / 255 - 1,
+							image_data.data[idx + 1] * 2 / 255 - 1,
+							image_data.data[idx + 2] * 2 / 255 - 1,
+							image_data.data[idx + 3] * 2 / 255 - 1,
+						];
+					};
+					requestFrame();
+				})
+				i.src = url;
+			})
+
+			function random_1d() { return [4 * Math.random() - 2]; }
+			function random_2d() { return [2 * Math.random() - 1, 2 * Math.random() - 1]; }
+			function frame() {
+				frame_is_queued = false;
+				var random_x = (dimension == 2) ? random_2d : random_1d;
+				var learning_rate = parseFloat($('#learning_rate').val());
+				var minibatch_size = parseFloat($('#batch_size').val());
+				var x = random_x();
+				var y = ref(x);
+				var l2 = dist2(net.call(x), y);
+				var grad = net.l2grad(x, y);
+				for (var j = 1; j < minibatch_size; ++j) {
+					x = random_x();
+					y = ref(x);
+					var new_grad = net.l2grad(x, y);
+					l2 += dist2(net.call(x), y);
+					new_grad.forEach((layer, i1) => {
+						layer.forEach((row, i2) => {
+							row.forEach((g, i3) => {
+								if (!isFinite(g)) { throw "Whoops: " + g; }
+								grad[i1][i2][i3] += g;
+								if (!isFinite(grad[i1][i2][i3])) { throw "Whoops: " + grad[i1][i2][i3]; }
+							});
+						});
+					});
+				}
+				var use_adam = $('#optimizer').val() == 'adam';
+				var use_adamw = $('#optimizer').val() == 'adamw';
+				var use_sgdm = $('#optimizer').val() == 'sgdm';
+				var warmed_up_learning_rate = learning_rate;
+				if (use_adam || use_adamw) {
+					momentum_newness *= 0.9;
+					energy_newness *= 0.999;
+					warmed_up_learning_rate *= Math.sqrt(1 - energy_newness) / (1 - momentum_newness);
+				} else if (use_sgdm) {
+					momentum_newness *= 0.9;
+					warmed_up_learning_rate /= 1 - momentum_newness;
+				}
+				grad.forEach((layer, i1) => {
+					layer.forEach((row, i2) => {
+						row.forEach((x, i3) => {
+							if (use_adam || use_adamw) {
+								momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
+								energy[i1][i2][i3] = 0.999 * energy[i1][i2][i3] + 0.001 * x * x;
+								x = momentum[i1][i2][i3] / Math.sqrt(energy[i1][i2][i3] + 1e-6);
+							} else if (use_sgdm) {
+								momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
+								x = momentum[i1][i2][i3];
+							}
+							net.layers[i1].weight[i2][i3] -= x * warmed_up_learning_rate / minibatch_size + use_adamw * 0.001 * net.layers[i1].weight[i2][i3];
+							if (!isFinite(net.layers[i1].weight[i2][i3])) { throw "Whoops: " + net.layers[i1].weight[i2][i3]; }
+						});
+					});
+				});
+				l2 /= minibatch_size;
+				++step_count;
+				$('#stepcounter').text(step_count);
+				$('#l2').text(l2.toFixed(3));
+				if (dimension == 2) {
+					draw_2d();
+				} else {
+					draw_1d();
+				}
+				if (playing) { requestFrame(); }
+			}
+			function draw_1d() {
+				var canvas = $('#main1d')[0];
+				var c = canvas.getContext('2d');
+				canvas.width = 300;
+				c.save();
+				c.translate(canvas.width/2, canvas.height/2);
+				c.scale(canvas.width/6, -canvas.height/6);
+				c.fillStyle = 'rgb(31, 31, 31)';
+				c.fillRect(-2, -2, 4, 4);
+				c.strokeStyle = 'rgb(0, 127, 255)';
+				c.lineWidth = 0.05;
+				c.beginPath();
+				c.moveTo(-3, ref(-3));
+				for (var x = -3; x <= 3; x += 0.02) {
+					c.lineTo(x, ref([x])[0]);
+				}
+				c.stroke();
+				c.strokeStyle = 'rgb(0, 191, 0)';
+				c.beginPath();
+				c.moveTo(-3, net.call([-3])[0]);
+				for (var x = -3; x <= 3; x += 0.02) {
+					c.lineTo(x, net.call([x])[0]);
+				}
+				c.stroke();
+				c.restore();
+			}
+
+			function prep_2d() {
+				var canvas = $('#main2d')[0];
+				var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+				// generate and compile shader program
+				var vertex_shader = gl.createShader(gl.VERTEX_SHADER);
+				gl.shaderSource(vertex_shader, [
+					"attribute vec2 aPos;",
+					"varying mediump vec2 vCoord;",
+					"void main(void) {",
+					"    vCoord = aPos;",
+					"    gl_Position = vec4(aPos, 0., 1.);",
+					"}",
+				].join("\n"));
+				gl.compileShader(vertex_shader);
+				if (!gl.getShaderParameter(vertex_shader, gl.COMPILE_STATUS)) {
+					throw ("Error compiling vertex shader: "
+						+ gl.getShaderInfoLog(vertex_shader));
+					return;
+				}
+				var fragment_shader = gl.createShader(gl.FRAGMENT_SHADER);
+				gl.shaderSource(fragment_shader, net.as_2d_shader());
+				gl.compileShader(fragment_shader);
+				if (!gl.getShaderParameter(fragment_shader, gl.COMPILE_STATUS)) {
+					throw ("Error compiling fragment shader: "
+						+ gl.getShaderInfoLog(fragment_shader));
+					return;
+				}
+				var prog = gl.createProgram();
+				gl.attachShader(prog, vertex_shader);
+				gl.attachShader(prog, fragment_shader);
+				gl.linkProgram(prog);
+				if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+					throw ("Error linking shader program: "
+						+ gl.getProgramInfoLog(prog));
+					return;
+				}
+				gl.useProgram(prog);
+				// draw a rectangle covering the screen; assume it's square.
+				var vertex_buffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([1, 1, -1, 1, 1, -1, -1, -1]),
+					gl.STATIC_DRAW);
+				// configure
+				gl.clearColor(0, 0, 0, 0);
+				gl.disable(gl.DEPTH_TEST);
+				// prepare texture
+				var texture = gl.createTexture();
+				gl.bindTexture(gl.TEXTURE_2D, texture);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+				gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+				gl.bindTexture(gl.TEXTURE_2D, null);
+				var weights_buffer = new ArrayBuffer(0x100000);
+				return {
+					"aPos": gl.getAttribLocation(prog, 'aPos'),
+					"uWeights": gl.getUniformLocation(prog, 'uWeights'),
+					"vertex_buffer": vertex_buffer,
+					"texture": texture,
+					"weights_view": new DataView(weights_buffer),
+					"weights_uint8": new Uint8Array(weights_buffer),
+				};
+			}
+			function draw_2d() {
+				var canvas = $('#main2d')[0];
+				var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+				gl.clear(gl.COLOR_BUFFER_BIT);
+				// upload network params
+				// TODO support sizes other than 512x512 by reading MAX_TEXTURE_SIZE
+				gl.activeTexture(gl.TEXTURE0);
+				gl.bindTexture(gl.TEXTURE_2D, handles2d.texture);
+				var byte_offset = 0;
+				for (var ell = 0; ell < net.layers.length; ++ell) {
+					for (var i = 0; i < net.layers[ell].weight.length; ++i) {
+						for (var j = 0; j < net.layers[ell].weight[i].length; ++j) {
+							handles2d.weights_view.setFloat32(byte_offset, net.layers[ell].weight[i][j], /* littleEndian = */ true);
+							byte_offset += 4;
+						}
+					}
+				}
+				gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, handles2d.weights_uint8);
+				gl.uniform1i(handles2d.uWeights, 0);
+				// select verts to draw
+				gl.bindBuffer(gl.ARRAY_BUFFER, handles2d.vertex_buffer);
+				gl.enableVertexAttribArray(handles2d.aPos);
+				gl.vertexAttribPointer(handles2d.aPos, 2, gl.FLOAT, false, 0, 0);
+				// draw it!
+				gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+				// update sampler
+				if (mousex >= -1 && mousex <= 1 && mousey >= -1 && mousey <= 1) {
+					var raw_out = net.call([mousex, -mousey]);
+					$('#hoversample').css('background-color',
+						`rgba(${127.5 * raw_out[0] + 127.5}, ${127.5 * raw_out[1] + 127.5},`
+						+ `${127.5 * raw_out[2] + 127.5}, ${0.5 * raw_out[3] + 0.5})`);
+				}
+			}
+
+			updateTarget();
+			reroll();
+			requestFrame();
+		});
+	</script>
+</head>
+
+<body>
+	<h1>Wheee</h1>
+	<div id="canvascontainer">
+		<canvas id="main1d" width="300" height="300">
+		</canvas>
+		<canvas id="main2d" width="300" height="300" style="display: none;">
+		</canvas>
+	</div>
+	<div id="hoversample" style="width: 300px; height: 10px; margin: 0.5em auto;"></div>
+	<div>Steps: <span id="stepcounter">0</span></div>
+	<div>L2: <span id="l2">Infinity</span></div>
+	<form action="#" method="get">
+		<div>
+			<button id="reroll">&#x27f2;</button>
+			<button id="playpause">&#x23ef;</button>
+		</div>
+		<div>
+			<select id="optimizer">
+				<option value="adam">Adam</option>
+				<option value="adamw">AdamW</option>
+				<option value="sgdm">SGD+Momentum</option>
+				<option value="sgd">SGD</option>
+			</select>
+			<select id="activation">
+				<option value="relu">ReLU</option>
+				<option value="leaky_relu">Leaky ReLU (0.2)</option>
+				<option value="tanh">tanh</option>
+				<option value="abs">abs</option>
+				<option value="softplus">softplus</option>
+				<option value="square">x²</option>
+				<option value="nop">Linear (no-op)</option>
+			</select>
+		</div>
+		<div>
+			<label for="layers" title="layers">&#x29c9;</label><input type="text" id="layers" title="layers" value="8, 8"/>
+		</div>
+		<div>
+			<label for="init_scale" title="start smooth">&#x2b1f;</label><input type="range" id="init_scale" min="1" max="10" step="any" value="2" /><label for="init_scale" title="start bumpy">&#x1f7c9;</label>
+		</div>
+		<div>
+			<label for="learning_rate" title="learning rate">&#x1f422;</label><input type="range" id="learning_rate" min="0.001" max="1" step="any" value="0.3" /><label for="learning_rate" title="learning rate">&#x1f407;</label>
+		</div>
+		<div>
+			<label for="batch_size" title="1 sample per step">&#x204e;</label><input type="range" id="batch_size" min="1" max="1000" step="1" value="100" /><label for="batch_size" title="1000 samples per step">&#x2042;</label>
+		</div>
+		<div style="text-align: left; display: inline-block; font-family: monospace;">
+			<div>target function(x &in; [-2, 2]) {</div>
+			<textarea id="target_function" rows="5" cols="40" style="margin-left: 1em;">return Math.cos(0.5 * Math.pow(x + 2, 3));</textarea>
+			<!-- return x*x*x*x*5/16 - x*x;  // is another good one -->
+			<div>}</div>
+		</div>
+		<div>
+			<input type="file" id="image_upload" />
+			<label for="image_upload">Import image</label>
+			<canvas id="image_upload_view" width="300" height="300"></canvas>
+		</div>
+	</form>
+</body>
+
+</html>
