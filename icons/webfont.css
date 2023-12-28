@@ -1,0 +1,13 @@
+@font-face {
+    font-family: 'NutIcons-neuralnets';
+    src: url('neuralnets.eot');
+    src: url('neuralnets.eot?#iefix') format('embedded-opentype'),
+         url('neuralnets.woff') format('woff'),
+         url('neuralnets.ttf') format('truetype'),
+         url('neuralnets.svg#NutIcons-neuralnets') format('svg');
+    font-weight: normal;
+    font-style: normal;
+}
+
+/* Apply this font to the icon class. */
+.icon { font-family: NutIcons-neuralnets, sans; }

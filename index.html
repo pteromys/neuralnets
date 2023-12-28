@@ -2,48 +2,149 @@
 <html lang="en">
 
 <head>
-	<title>Activation function visualizer</title>
+	<title>Neural networks</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" type="text/css" href="icons/webfont.css" />
 	<style type="text/css">
 		/* color scheme */
-		body { color: #000; background: #eee; }
+		body, .tab.active { color: #000; background: #eee; }
 		a:link { color: #06f; }
 		a:visited { color: #609; }
 		a:hover { color: #9cf; }
 		a:active { color: #fc0; }
-		input[type="text"], textarea { color: #000; background: #fff; border: 1px solid #999;}
+		button, select, #helplink { color: #000; background: #fff; border: 1px solid #999; }
+		button, #helplink { box-shadow: 0em -0.5em 1em -0.5em rgba(0, 0, 0, 0.25) inset; }
+		select { box-shadow: 0em 0.5em 1em -0.5em rgba(0, 0, 0, 0.1) inset; }
+		input[type="text"], textarea { color: #000; background: #fff; border: 1px solid #999; }
+		input[type="text"].invalid, textarea.invalid { background: #fcc; }
+		.tab, .tabcontent { border-color: #000; }
+		.tab.active { border-bottom-color: #eee; }
+		.overlay > * { color: #000; background: #eee; }
 		@media (prefers-color-scheme: dark) {
-			body { color: #ddd; background: #000; }
+			body, .tab.active { color: #ddd; background: #000; }
 			a:link { color: #39f; }
-			a:visited { color: #93f; }
+			a:visited { color: #c6f; }
 			a:hover { color: #9cf; }
 			a:active { color: #fc0; }
-			input[type="text"], textarea { color: #fff; background: #333; border: 1px solid #666;}
+			button, select, #helplink { color: #fff; background: #333; border: 1px solid #666; }
+			button, #helplink { box-shadow: 0em -0.5em 1em -0.5em rgba(0, 0, 0, 0.5) inset; }
+			select { box-shadow: 0em 0.5em 1em -0.5em rgba(0, 0, 0, 0.5) inset; }
+			input[type="text"].invalid, textarea.invalid { background: #300; color: #f99; }
+			input[type="text"], textarea { color: #fff; background: #333; border: 1px solid #666; }
+			.tab, .tabcontent { border-color: #666; }
+			.tab.active { border-bottom-color: #000; }
+			.overlay > * { color: #fff; background: #333; }
 		}
 		body { text-align: center; }
 		/* form element spacing */
-		form > div { margin-bottom: 0.5em; }
+		.formrow > * { display: inline-block; vertical-align: middle; }
+		input[type="text"] { width: 5em; }
+		@media (min-width: 18em) { input[type="text"] { width: 6em; } }
+		@media (min-width: 20em) { input[type="text"] { width: 7em; } }
+		@media (min-width: 22em) { input[type="text"] { width: 8em; } }
+		@media (min-width: 24em) { input[type="text"] { width: 9em; } }
+		input[type="range"] { width: 5em; }
 		input { display: inline-block; vertical-align: middle; }
 		label + input[type="text"], input[type="text"] + label { margin-left: 0.25em; }
 		/* form element styling */
 		input[type="text"], textarea { border-radius: 0.1em; }
-		label {
-			display: inline-block; vertical-align: middle;
-			font-size: 200%;
-		}
-		#reroll, #playpause {
+		label { display: inline-block; vertical-align: middle; }
+		label.icon { font-size: 200%; }
+		button, #helplink {
 			font-size: 200%;
 			line-height: 1em;
-			padding: 0.1em 0.25em;
-			border-radius: 1em;
-			border-width: 0.2em;
+			text-decoration: none;
+			padding: 0.25em;
+			border-radius: 0.25em;
 		}
+		select { border-radius: 1em; height: 1.5em; margin: 0.4em 0em; }
+		#image_upload { display: none; }
 		/* layout hacks */
+		html, body {
+			margin: 0px; padding: 0px;
+			width: 100%; height: 100%; position: relative;
+		}
+		* { box-sizing: border-box; }
 		#canvascontainer {
-			width: 300px; height: 300px;
 			position: relative;
 			margin: 0em auto;
 		}
-		#canvascontainer > canvas { position: absolute; left: 0px; top: 0px; }
+		#canvascontainer > canvas {
+			position: absolute; left: 0px; top: 0px;
+			width: 100%; height: 100%;
+		}
+		#hoversample {
+			height: 10px; margin: 10px auto 0px;
+			width: 100%;
+		}
+		form {
+			margin: 0em 0.5em;
+		}
+		.formrow h2 {
+			font-size: 1rem; margin: 0em;
+		}
+		#image_upload_view {
+			aspect-ratio: 1;
+			max-width: 100%; max-height: 8rem;
+		}
+		body > * { display: inline-block; vertical-align: middle; }
+		.overlay {
+			display: none;
+			position: absolute;
+			left: 0; top: 0; bottom: 0; right: 0;
+			background: rgba(0, 0, 0, 0.5);
+		}
+		.overlay:target {
+			display: block;
+		}
+		.overlay > * {
+			position: absolute;
+			margin: auto;
+			left: 0; top: 0; bottom: 0; right: 0;
+			max-width: 90%;
+			max-height: 90%;
+			overflow: auto;
+		}
+		#help > * {
+			padding: 0em 2em;
+			top: 1em; bottom: 1em;
+			border-radius: 1em;
+			max-width: 30em;
+			text-align: left;
+		}
+		.colophon { text-align: center; }
+		/* bottom tabs */
+		.tab {
+			font-size: 120%; font-weight: bold;
+			border-width: 1px; border-style: solid;
+			border-radius: 1em 1em 0em 0em;
+			border-bottom-color: transparent;
+			display: inline-block;
+			padding: 0.1em 1em;
+			margin: 0em 0.1em;
+			text-decoration: none;
+		}
+		.tab.active {
+			position: relative; top: 1px;
+		}
+		.tabcontent {
+			display: none;
+			border-style: solid;
+			border-width: 1px 0px 0px;
+			padding-top: 0.5em;
+		}
+		.tabcontent.active { display: block; }
+		#target_function { margin-left: 1rem; max-width: 10rem; }
+		@media (min-width: 12rem) { #target_function { max-width: 10.5rem; } }
+		@media (min-width: 13rem) { #target_function { max-width: 11.5rem; } }
+		@media (min-width: 14rem) { #target_function { max-width: 12.5rem; } }
+		@media (min-width: 16rem) { #target_function { max-width: 14.5rem; } }
+		@media (min-width: 18rem) { #target_function { max-width: 16.5rem; } }
+		@media (min-width: 20rem) { #target_function { max-width: 18.5rem; } }
+		@media (min-width: 22rem) { #target_function { max-width: 20.5rem; } }
+		@media (min-width: 24rem) { #target_function { max-width: 22.5rem; } }
+		@media (min-width: 26rem) { #target_function { max-width: 24.5rem; } }
+		#target_2d > label > * { display: inline-block; vertical-align: middle; }
 	</style>
 	<script type="text/javascript" src="nn.js"></script>
 	<script type="text/javascript" src="jquery-1.11.3.min.js"></script>
@@ -67,11 +168,45 @@
 			var playing = false;
 			var frame_is_queued = false;
 			var step_count = 0;
+
+			// tabs
+			$('.tab').on('click', function (e) {
+				e.preventDefault();
+				$('.tab, .tabcontent').removeClass('active');
+				$(this).addClass('active');
+				$($(this).attr('href')).addClass('active');
+			})
+			$('.tab[href="#target_1d"]').click();
+			// help
+			$('#help').on('click', function (e) {
+				if (this === e.target) {
+					if (window.history && window.history.back) {
+						window.history.back()
+					} else {
+						window.location = '#';
+					}
+				}
+			});
+
 			function requestFrame() {
 				if (frame_is_queued) { return; }
 				window.requestAnimationFrame(frame);
 				frame_is_queued = true;
 			}
+			function resize() {
+				var form = document.getElementById('form');
+				var size_down = Math.min(window.innerWidth, window.innerHeight - form.offsetHeight);
+				var size_across = Math.min(window.innerHeight, window.innerWidth - form.offsetWidth);
+				var size = Math.floor(Math.max(size_down, size_across, 20)) - 20;
+				var style = document.getElementById('canvascontainer').style;
+				style.width = style.height = size + 'px';
+				document.getElementById('graphicscontainer').style.width = size + 'px';
+				document.getElementById('form').style.marginTop = size_down > size_across ? '0.5em' : '0em';
+				if ((dimension == 2 ? 4 : 1) == net.layers[net.layers.length - 1].weight.length) {
+					requestFrame();
+				}
+			}
+			$(window).on('resize', resize);
 			$('#playpause').on('click', function (e) {
 				e.preventDefault();
 				playing = !playing;
@@ -89,48 +224,72 @@
 				var radius = (dimension == 2) ? 1 : 2;
 				mousex = (e.pageX - offset.left) / target.width() * 2 * radius - radius;
 				mousey = (e.pageY - offset.top) / target.height() * 2 * radius - radius;
+				if (dimension == 2) { requestFrame(); }
 			});
 
 			function updateTarget() {
-				var f = new Function('x', $('#target_function').val());
+				var f;
 				try {
+					f = new Function('x', $('#target_function').val());
 					if (!isFinite(f(-0.10001)) || !isFinite(f(0.10001))) {
+						$('#target_function').attr('title', 'error: function is sometimes NaN');
 						return;
 					}
 				} catch (err) {
+					$('#target_function').addClass('invalid');
+					$('#target_function').attr('title', err);
 					return;
 				}
+				$('#target_function').removeClass('invalid');
+				$('#target_function').attr('title', '');
 				if (dimension != 1) {
+					try {
+						if (reroll() === null) { return; }
+					} catch (err) {
+						return;
+					}
 					$('#main2d').css('display', 'none');
 					$('#main1d').css('display', 'block');
-					dimension = 1;
-					reroll();
 				}
 				ref = (v) => [f(v[0])];
 				requestFrame();
 			}
 			$('#target_function').on('change', updateTarget);
 
-			function reroll() {
-				layerstring = '[' + $('#layers').val() + ']';
-				try {
-					layers = JSON.parse(layerstring);
-				} catch {  // TODO catch just JSON parse errors
-					window.alert('Unparseable: ' + layerstring);
-					return;
-				}
+			function validate_layers_input() {
+				var layerstring = '[' + $('#layers').val() + ']';
+				var layers = null;
+				try { layers = JSON.parse(layerstring); } catch {}
 				if (!(layers instanceof Array)
-					|| layers.some((x) => typeof x != "number"))
+					|| layers.some((x) => typeof x != "number" || !(x > 0) || x % 1))
 				{
-					window.alert('Malformed: ' + layerstring);
-					return;
+					$('#layers').addClass('invalid');
+					return null;
 				}
+				$('#layers').removeClass('invalid');
+				return layers;
+			}
+			$('#layers').on('change', validate_layers_input);
+
+			function read_batch_size() {
+				return Math.round(Math.pow(10, parseFloat($('#log10_batch_size').val())));
+			}
+			function update_batch_size_title () {
+				$('#log10_batch_size').attr('title', read_batch_size());
+			}
+			$('#log10_batch_size').on('change', update_batch_size_title);
+			$('#log10_batch_size').on('mousemove', update_batch_size_title);
+
+			function reroll() {
+				var layers = validate_layers_input();
+				if (layers === null) { return; }
 				activation_str = $('#activation').val();
 				if (!NN.hasOwnProperty(activation_str)) {
 					window.alert('Unknown activation function: ' + activation_str);
 					return;
 				}
 				step_count = 0;
+				dimension = $('#target_2d').hasClass('active') ? 2 : 1;
 				net = new NN.Net(
 					dimension, layers, (dimension == 2) ? 4 : 1,
 					NN[activation_str], parseFloat($('#init_scale').val()));
@@ -140,16 +299,21 @@
 				if (dimension == 2) {
 					handles2d = prep_2d();
 				}
+				return net;
 			}
 			$('#reroll').on('click', function (e) {
 				e.preventDefault();
-				reroll();
+				if (dimension == ($('#target_2d').hasClass('active') ? 2 : 1)) {
+					reroll();
+				} else if ($('#target_2d').hasClass('active')) {
+					$('#image_upload').change();
+				} else {
+					$('#target_function').change();
+				}
 				requestFrame();
 			});
 
-			$('#image_upload').on('change', function () {
-				if (!this.files.length) { return; }
-				var url = window.URL.createObjectURL(this.files[0]);
+			function loadImageURL(url, dry_run) {
 				var i = new Image();
 				$(i).on('error', function () {
 					console.log('Failed to load image');
@@ -171,12 +335,16 @@
 							ctmp.width * aspect, ctmp.height);
 					}
 					var image_data = c.getImageData(0, 0, ctmp.width, ctmp.height);
+					if (dry_run) { return; }
 					// set up
 					if (dimension != 2) {
+						try {
+							if (reroll() === null) { return; }
+						} catch (err) {
+							return;
+						}
 						$('#main2d').css('display', 'block');
 						$('#main1d').css('display', 'none');
-						dimension = 2;
-						reroll();
 					}
 					ref = function (x) {
 						var imgx = Math.min(Math.max(0, Math.floor((0.5 + 0.5 * x[0]) * ctmp.width)), ctmp.width - 1);
@@ -192,66 +360,77 @@
 					requestFrame();
 				})
 				i.src = url;
-			})
+				return i;
+			}
+			$('#image_upload').on('change', function () {
+				if (!this.files.length) {
+					loadImageURL('box300.png');
+					return;
+				}
+				var url = window.URL.createObjectURL(this.files[0]);
+				loadImageURL(url);
+			});
 
 			function random_1d() { return [4 * Math.random() - 2]; }
 			function random_2d() { return [2 * Math.random() - 1, 2 * Math.random() - 1]; }
 			function frame() {
 				frame_is_queued = false;
-				var random_x = (dimension == 2) ? random_2d : random_1d;
-				var learning_rate = parseFloat($('#learning_rate').val());
-				var minibatch_size = parseFloat($('#batch_size').val());
-				var x = random_x();
-				var y = ref(x);
-				var l2 = dist2(net.call(x), y);
-				var grad = net.l2grad(x, y);
-				for (var j = 1; j < minibatch_size; ++j) {
-					x = random_x();
-					y = ref(x);
-					var new_grad = net.l2grad(x, y);
-					l2 += dist2(net.call(x), y);
-					new_grad.forEach((layer, i1) => {
+				if (playing) {
+					var random_x = (dimension == 2) ? random_2d : random_1d;
+					var learning_rate = parseFloat($('#learning_rate').val());
+					var minibatch_size = read_batch_size();
+					var x = random_x();
+					var y = ref(x);
+					var l2 = dist2(net.call(x), y);
+					var grad = net.l2grad(x, y);
+					for (var j = 1; j < minibatch_size; ++j) {
+						x = random_x();
+						y = ref(x);
+						var new_grad = net.l2grad(x, y);
+						l2 += dist2(net.call(x), y);
+						new_grad.forEach((layer, i1) => {
+							layer.forEach((row, i2) => {
+								row.forEach((g, i3) => {
+									if (!isFinite(g)) { throw "Whoops: " + g; }
+									grad[i1][i2][i3] += g;
+									if (!isFinite(grad[i1][i2][i3])) { throw "Whoops: " + grad[i1][i2][i3]; }
+								});
+							});
+						});
+					}
+					var use_adam = $('#optimizer').val() == 'adam';
+					var use_adamw = $('#optimizer').val() == 'adamw';
+					var use_sgdm = $('#optimizer').val() == 'sgdm';
+					var warmed_up_learning_rate = learning_rate;
+					if (use_adam || use_adamw) {
+						momentum_newness *= 0.9;
+						energy_newness *= 0.999;
+						warmed_up_learning_rate *= Math.sqrt(1 - energy_newness) / (1 - momentum_newness);
+					} else if (use_sgdm) {
+						momentum_newness *= 0.9;
+						warmed_up_learning_rate /= 1 - momentum_newness;
+					}
+					grad.forEach((layer, i1) => {
 						layer.forEach((row, i2) => {
-							row.forEach((g, i3) => {
-								if (!isFinite(g)) { throw "Whoops: " + g; }
-								grad[i1][i2][i3] += g;
-								if (!isFinite(grad[i1][i2][i3])) { throw "Whoops: " + grad[i1][i2][i3]; }
+							row.forEach((x, i3) => {
+								if (use_adam || use_adamw) {
+									momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
+									energy[i1][i2][i3] = 0.999 * energy[i1][i2][i3] + 0.001 * x * x;
+									x = momentum[i1][i2][i3] / Math.sqrt(energy[i1][i2][i3] + 1e-6);
+								} else if (use_sgdm) {
+									momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
+									x = momentum[i1][i2][i3];
+								}
+								net.layers[i1].weight[i2][i3] -= x * warmed_up_learning_rate / minibatch_size + use_adamw * 0.001 * net.layers[i1].weight[i2][i3];
+								if (!isFinite(net.layers[i1].weight[i2][i3])) { throw "Whoops: " + net.layers[i1].weight[i2][i3]; }
 							});
 						});
 					});
+					l2 /= minibatch_size;
+					++step_count;
+					$('#stepcounter').text(step_count);
+					$('#l2').text(l2.toFixed(3));
 				}
-				var use_adam = $('#optimizer').val() == 'adam';
-				var use_adamw = $('#optimizer').val() == 'adamw';
-				var use_sgdm = $('#optimizer').val() == 'sgdm';
-				var warmed_up_learning_rate = learning_rate;
-				if (use_adam || use_adamw) {
-					momentum_newness *= 0.9;
-					energy_newness *= 0.999;
-					warmed_up_learning_rate *= Math.sqrt(1 - energy_newness) / (1 - momentum_newness);
-				} else if (use_sgdm) {
-					momentum_newness *= 0.9;
-					warmed_up_learning_rate /= 1 - momentum_newness;
-				}
-				grad.forEach((layer, i1) => {
-					layer.forEach((row, i2) => {
-						row.forEach((x, i3) => {
-							if (use_adam || use_adamw) {
-								momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
-								energy[i1][i2][i3] = 0.999 * energy[i1][i2][i3] + 0.001 * x * x;
-								x = momentum[i1][i2][i3] / Math.sqrt(energy[i1][i2][i3] + 1e-6);
-							} else if (use_sgdm) {
-								momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
-								x = momentum[i1][i2][i3];
-							}
-							net.layers[i1].weight[i2][i3] -= x * warmed_up_learning_rate / minibatch_size + use_adamw * 0.001 * net.layers[i1].weight[i2][i3];
-							if (!isFinite(net.layers[i1].weight[i2][i3])) { throw "Whoops: " + net.layers[i1].weight[i2][i3]; }
-						});
-					});
-				});
-				l2 /= minibatch_size;
-				++step_count;
-				$('#stepcounter').text(step_count);
-				$('#l2').text(l2.toFixed(3));
 				if (dimension == 2) {
 					draw_2d();
 				} else {
@@ -262,7 +441,7 @@
 			function draw_1d() {
 				var canvas = $('#main1d')[0];
 				var c = canvas.getContext('2d');
-				canvas.width = 300;
+				canvas.width = canvas.height = $(canvas).width();
 				c.save();
 				c.translate(canvas.width/2, canvas.height/2);
 				c.scale(canvas.width/6, -canvas.height/6);
@@ -381,70 +560,96 @@
 				}
 			}
 
+			loadImageURL('box300.png', /* dry_run */ true);
 			updateTarget();
 			reroll();
-			requestFrame();
+			resize();
 		});
 	</script>
 </head>
 
 <body>
-	<h1>Wheee</h1>
-	<div id="canvascontainer">
-		<canvas id="main1d" width="300" height="300">
-		</canvas>
-		<canvas id="main2d" width="300" height="300" style="display: none;">
-		</canvas>
-	</div>
-	<div id="hoversample" style="width: 300px; height: 10px; margin: 0.5em auto;"></div>
-	<div>Steps: <span id="stepcounter">0</span></div>
-	<div>L2: <span id="l2">Infinity</span></div>
-	<form action="#" method="get">
-		<div>
-			<button id="reroll">&#x27f2;</button>
-			<button id="playpause">&#x23ef;</button>
+	<div id="graphicscontainer">
+		<div id="canvascontainer">
+			<canvas id="main1d" width="300" height="300">
+			</canvas>
+			<canvas id="main2d" width="300" height="300" style="display: none;">
+			</canvas>
 		</div>
-		<div>
-			<select id="optimizer">
+		<div id="hoversample"></div>
+	</div><form id="form" action="#" method="get">
+		<div class="formrow" style="margin-bottom: 0.5em;">
+			<button id="reroll" title="Reroll" class="icon">&#x27f2;</button>
+			<button id="playpause" title="Run/Pause" class="icon">&#x23ef;</button>
+			<div>
+				<div>Steps: <span id="stepcounter">0</span></div>
+				<div>L2: <span id="l2">Infinity</span></div>
+			</div>
+			<a id="helplink" class="icon" title="Help" href="#help">?</a>
+		</div>
+		<div class="formrow" style="display: grid; grid: 0.25fr 0.25fr 0.25fr 0.25fr / auto-flow; align-items: center; margin: 0.5em; gap: 0em 0.5em;">
+			<h2>Live</h2>
+			<select id="optimizer" title="optimizer">
 				<option value="adam">Adam</option>
 				<option value="adamw">AdamW</option>
 				<option value="sgdm">SGD+Momentum</option>
 				<option value="sgd">SGD</option>
 			</select>
-			<select id="activation">
+			<div><label for="learning_rate" title="small steps" class="icon">&#x1f43e;</label><input type="range" id="learning_rate" min="0.001" max="1" step="any" value="0.3" /><label for="learning_rate" title="big steps" class="icon">&#x1f463;</label></div>
+			<div><label for="log10_batch_size" title="1 sample per step" class="icon">&#x273d;</label><input type="range" id="log10_batch_size" min="0" max="3" step="any" value="2" /><label for="log10_batch_size" title="1000 samples per step" class="icon">&#x2042;</label></div>
+			<h2>Needs reroll</h2>
+			<select id="activation" title="activation function (a.k.a. nonlinearity)">
+				<option value="tanh">tanh</option>
 				<option value="relu">ReLU</option>
 				<option value="leaky_relu">Leaky ReLU (0.2)</option>
-				<option value="tanh">tanh</option>
 				<option value="abs">abs</option>
 				<option value="softplus">softplus</option>
-				<option value="square">x²</option>
+				<option value="square">x&#x00b2;</option>
+				<option value="gaussian">Gaussian</option>
 				<option value="nop">Linear (no-op)</option>
 			</select>
+			<div><label for="layers" title="layer sizes (comma-separated positive integers)" class="icon">&#x29c9;</label><input type="text" id="layers" title="layer sizes (comma-separated positive integers)" value="8, 8, 8, 8"/></div>
+			<div><label for="init_scale" title="start smooth" class="icon">&#x2b1f;</label><input type="range" id="init_scale" min="1" max="10" step="any" value="2" /><label for="init_scale" title="start bumpy" class="icon">&#x1f7c9;</label></div>
 		</div>
 		<div>
-			<label for="layers" title="layers">&#x29c9;</label><input type="text" id="layers" title="layers" value="8, 8"/>
+			<a class="tab active" href="#target_1d">1D</a>
+			<a class="tab" href="#target_2d">2D</a>
 		</div>
-		<div>
-			<label for="init_scale" title="start smooth">&#x2b1f;</label><input type="range" id="init_scale" min="1" max="10" step="any" value="2" /><label for="init_scale" title="start bumpy">&#x1f7c9;</label>
-		</div>
-		<div>
-			<label for="learning_rate" title="learning rate">&#x1f422;</label><input type="range" id="learning_rate" min="0.001" max="1" step="any" value="0.3" /><label for="learning_rate" title="learning rate">&#x1f407;</label>
-		</div>
-		<div>
-			<label for="batch_size" title="1 sample per step">&#x204e;</label><input type="range" id="batch_size" min="1" max="1000" step="1" value="100" /><label for="batch_size" title="1000 samples per step">&#x2042;</label>
-		</div>
-		<div style="text-align: left; display: inline-block; font-family: monospace;">
-			<div>target function(x &in; [-2, 2]) {</div>
-			<textarea id="target_function" rows="5" cols="40" style="margin-left: 1em;">return Math.cos(0.5 * Math.pow(x + 2, 3));</textarea>
+		<div class="tabcontent active" id="target_1d" style="text-align: left; font-family: monospace;">
+			<div>target function(x in [-2, 2]) {</div>
+			<textarea id="target_function" rows="5" cols="40">return Math.cos(0.5 * Math.pow(x + 2, 3));</textarea>
 			<!-- return x*x*x*x*5/16 - x*x;  // is another good one -->
 			<div>}</div>
 		</div>
-		<div>
+		<div class="tabcontent active" id="target_2d">
 			<input type="file" id="image_upload" />
-			<label for="image_upload">Import image</label>
-			<canvas id="image_upload_view" width="300" height="300"></canvas>
+			<label for="image_upload">
+				<canvas id="image_upload_view" width="300" height="300"></canvas>
+				<div style="width: 6em;">(click to change)</div>
+			</label>
 		</div>
 	</form>
+	<div class="overlay" id="help"><div>
+		<h2>Overview</h2>
+		<p>Train a small neural network! Feed it a photo in the 2D tab, and fiddle with the options to see how good of an approximation you can get it to reproduce after, say, 5000 steps. Stay on the <a href="https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam">Adam</a> optimizer if you didn't already care because it's the least fragile; but do check out how rerolling it with a different <a href="https://en.wikipedia.org/wiki/Activation_function">activation function</a> (the nonlinearity building block) affects the shape of the result.</p>
+		<h2>Theory</h2>
+		<p>The network chains together a bunch of "layers" of the form</p>
+		<table style="text-align: center;"><tr>
+			<td>input numbers</td><td>&rarr;</td>
+			<td>some weighted averages</td><td>activation<br/>&rarr;</td>
+			<td>output numbers.</td>
+		</tr></table>
+		<p>It learns to approximate a function f : x &rarr; y by repeatedly checking a random sample of inputs and tweaking the averaging weights to match f more closely on those inputs. The "activation function" is a response curve (vaguely like gamma, tone mapping, or dynamic range compression) it can use to build up nonlinear effects.</p>
+		<p><a href="http://johnsalvatier.org/blog/2017/reality-has-a-surprising-amount-of-detail">As always</a>, the details matter, and you can quickly get some intuition for how by watching it learn live.</p>
+		<h2>See also / prior art</h2>
+		<ul>
+			<li><a href="https://cs.stanford.edu/people/karpathy/convnetjs/demo/classify2d.html">Andrej Karpathy's ConvNetJS demo</a> trains a network for classification and lets you look inside by graphing where the input grid lands in each layer's output space.</li>
+			<li><a href="https://playground.tensorflow.org/">Tensorflow's playground</a> graphs each neuron's output as a function of the 2D input space, so you can see what shapes each layer and activation function produce most naturally. It's also useful for probing what happens in the parts of the input space without data and how that depends on the options (particularly the network size).</li>
+		</ul>
+		<p class="colophon">
+			<a href="https://github.com/pteromys/neuralnets">GitHub</a>
+			| <a href="LICENSE">MIT License</a></p>
+	</div></div>
 </body>
 
 </html>

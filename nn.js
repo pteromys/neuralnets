@@ -231,6 +231,10 @@ var NN = (function () {
 	square.d = function (x) { return 2 * x; }
 	square.glsl = "(mediump float x) { return x * x; }";
 
+	function gaussian(x) { return Math.exp(-0.5 * x * x); }
+	gaussian.d = function (x) { return -x * gaussian(x); }
+	gaussian.glsl = "(mediump float x) { return exp(-0.5 * x * x); }";
+
 	return {
 		"Net": Net,
 		"relu": relu,
@@ -240,5 +244,6 @@ var NN = (function () {
 		"softplus": softplus,
 		"abs": leaky_relu(-1),
 		"square": square,
+		"gaussian": gaussian,
 	};
 })();
