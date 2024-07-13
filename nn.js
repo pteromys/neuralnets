@@ -235,6 +235,10 @@ var NN = (function () {
 	gaussian.d = function (x) { return -x * gaussian(x); }
 	gaussian.glsl = "(mediump float x) { return exp(-0.5 * x * x); }";
 
+	function agnesi(x) { return 1 / (1 + x * x); }
+	agnesi.d = function (x) { var a = agnesi(x); return -2 * x * a * a; }
+	agnesi.glsl = "(mediump float x) { return 1. / (1. + x * x); }";
+
 	return {
 		"Net": Net,
 		"relu": relu,
@@ -245,5 +249,6 @@ var NN = (function () {
 		"abs": leaky_relu(-1),
 		"square": square,
 		"gaussian": gaussian,
+		"agnesi": agnesi,
 	};
 })();
