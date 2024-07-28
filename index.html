@@ -206,7 +206,7 @@
 				style.width = style.height = size + 'px';
 				document.getElementById('graphicscontainer').style.width = size + 'px';
 				document.getElementById('form').style.marginTop = size_down > size_across ? '0.5em' : '0em';
-				if ((dimension == 2 ? 4 : 1) == net.layers[net.layers.length - 1].weight.length) {
+				if ((dimension == 2 ? 4 : 1) == net.layers[net.layers.length - 1].weight.rows) {
 					requestFrame();
 				}
 			}
@@ -255,7 +255,7 @@
 					$('#main2d').css('display', 'none');
 					$('#main1d').css('display', 'block');
 				}
-				ref = (v) => [f(v[0])];
+				ref = (v) => v.map(f);
 				requestFrame();
 			}
 			$('#target_function').on('change', updateTarget);
@@ -351,15 +351,15 @@
 						$('#main1d').css('display', 'none');
 					}
 					ref = function (x) {
-						var imgx = Math.min(Math.max(0, Math.floor((0.5 + 0.5 * x[0]) * ctmp.width)), ctmp.width - 1);
-						var imgy = Math.min(Math.max(0, Math.floor((0.5 - 0.5 * x[1]) * ctmp.height)), ctmp.height - 1);
+						var imgx = Math.min(Math.max(0, Math.floor((0.5 + 0.5 * x.storage[0]) * ctmp.width)), ctmp.width - 1);
+						var imgy = Math.min(Math.max(0, Math.floor((0.5 - 0.5 * x.storage[1]) * ctmp.height)), ctmp.height - 1);
 						var idx = 4 * (ctmp.width * imgy + imgx);
-						return [
+						return NN.Matrix.from_vec([
 							image_data.data[idx] * 2 / 255 - 1,
 							image_data.data[idx + 1] * 2 / 255 - 1,
 							image_data.data[idx + 2] * 2 / 255 - 1,
 							image_data.data[idx + 3] * 2 / 255 - 1,
-						];
+						]);
 					};
 					requestFrame();
 				})
@@ -375,8 +375,12 @@
 				loadImageURL(url);
 			});
 
-			function random_1d() { return [4 * Math.random() - 2]; }
-			function random_2d() { return [2 * Math.random() - 1, 2 * Math.random() - 1]; }
+			function random_1d() {
+				return NN.Matrix.from_vec([4 * Math.random() - 2]);
+			}
+			function random_2d() {
+				return NN.Matrix.from_vec([2 * Math.random() - 1, 2 * Math.random() - 1]);
+			}
 			function frame() {
 				frame_is_queued = false;
 				if (playing) {
@@ -385,20 +389,22 @@
 					var minibatch_size = read_batch_size();
 					var x = random_x();
 					var y = ref(x);
-					var l2 = dist2(net.call(x), y);
+					var l2 = dist2(net.call(x).storage, y.storage);
 					var grad = net.l2grad(x, y);
+					grad.forEach((layer_gradient, i1) => {
+						layer_gradient.storage.forEach((g, i2) => {
+							if (!isFinite(g)) { throw "Whoops: " + g; }
+						});
+					});
 					for (var j = 1; j < minibatch_size; ++j) {
 						x = random_x();
 						y = ref(x);
 						var new_grad = net.l2grad(x, y);
-						l2 += dist2(net.call(x), y);
-						new_grad.forEach((layer, i1) => {
-							layer.forEach((row, i2) => {
-								row.forEach((g, i3) => {
-									if (!isFinite(g)) { throw "Whoops: " + g; }
-									grad[i1][i2][i3] += g;
-									if (!isFinite(grad[i1][i2][i3])) { throw "Whoops: " + grad[i1][i2][i3]; }
-								});
+						l2 += dist2(net.call(x).storage, y.storage);
+						new_grad.forEach((layer_gradient, i1) => {
+							layer_gradient.storage.forEach((g, i2) => {
+								if (!isFinite(g)) { throw "Whoops: " + g; }
+								grad[i1].storage[i2] += g;
 							});
 						});
 					}
@@ -414,20 +420,18 @@
 						momentum_newness *= 0.9;
 						warmed_up_learning_rate /= 1 - momentum_newness;
 					}
-					grad.forEach((layer, i1) => {
-						layer.forEach((row, i2) => {
-							row.forEach((x, i3) => {
-								if (use_adam || use_adamw) {
-									momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
-									energy[i1][i2][i3] = 0.999 * energy[i1][i2][i3] + 0.001 * x * x;
-									x = momentum[i1][i2][i3] / Math.sqrt(energy[i1][i2][i3] + 1e-6);
-								} else if (use_sgdm) {
-									momentum[i1][i2][i3] = 0.9 * momentum[i1][i2][i3] + 0.1 * x;
-									x = momentum[i1][i2][i3];
-								}
-								net.layers[i1].weight[i2][i3] -= x * warmed_up_learning_rate / minibatch_size + use_adamw * 0.001 * net.layers[i1].weight[i2][i3];
-								if (!isFinite(net.layers[i1].weight[i2][i3])) { throw "Whoops: " + net.layers[i1].weight[i2][i3]; }
-							});
+					grad.forEach((layer_gradient, i1) => {
+						layer_gradient.storage.forEach((g, i2) => {
+							if (use_adam || use_adamw) {
+								momentum[i1].storage[i2] = 0.9 * momentum[i1].storage[i2] + 0.1 * g;
+								energy[i1].storage[i2] = 0.999 * energy[i1].storage[i2] + 0.001 * g * g;
+								g = momentum[i1].storage[i2] / Math.sqrt(energy[i1].storage[i2] + 1e-6);
+							} else if (use_sgdm) {
+								momentum[i1].storage[i2] = 0.9 * momentum[i1].storage[i2] + 0.1 * g;
+								g = momentum[i1].storage[i2];
+							}
+							net.layers[i1].weight.storage[i2] -= g * warmed_up_learning_rate / minibatch_size + use_adamw * 0.001 * net.layers[i1].weight.storage[i2];
+							if (!isFinite(net.layers[i1].weight.storage[i2])) { throw "Whoops: " + net.layers[i1].weight.storage[i2]; }
 						});
 					});
 					l2 /= minibatch_size;
@@ -454,16 +458,16 @@
 				c.strokeStyle = 'rgb(0, 127, 255)';
 				c.lineWidth = 0.05;
 				c.beginPath();
-				c.moveTo(-3, ref(-3));
+				c.moveTo(-3, ref([-3])[0]);
 				for (var x = -3; x <= 3; x += 0.02) {
 					c.lineTo(x, ref([x])[0]);
 				}
 				c.stroke();
 				c.strokeStyle = 'rgb(0, 191, 0)';
 				c.beginPath();
-				c.moveTo(-3, net.call([-3])[0]);
+				c.moveTo(-3, net.call(NN.Matrix.from_vec([-3])).storage[0]);
 				for (var x = -3; x <= 3; x += 0.02) {
-					c.lineTo(x, net.call([x])[0]);
+					c.lineTo(x, net.call(NN.Matrix.from_vec([x])).storage[0]);
 				}
 				c.stroke();
 				c.restore();
@@ -540,9 +544,9 @@
 				gl.bindTexture(gl.TEXTURE_2D, handles2d.texture);
 				var byte_offset = 0;
 				for (var ell = 0; ell < net.layers.length; ++ell) {
-					for (var i = 0; i < net.layers[ell].weight.length; ++i) {
-						for (var j = 0; j < net.layers[ell].weight[i].length; ++j) {
-							handles2d.weights_view.setFloat32(byte_offset, net.layers[ell].weight[i][j], /* littleEndian = */ true);
+					for (var i = 0; i < net.layers[ell].weight.rows; ++i) {
+						for (var j = 0; j < net.layers[ell].weight.cols; ++j) {
+							handles2d.weights_view.setFloat32(byte_offset, net.layers[ell].weight.read(i, j), /* littleEndian = */ true);
 							byte_offset += 4;
 						}
 					}
@@ -557,7 +561,7 @@
 				gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 				// update sampler
 				if (mousex >= -1 && mousex <= 1 && mousey >= -1 && mousey <= 1) {
-					var raw_out = net.call([mousex, -mousey]);
+					var raw_out = net.call(NN.Matrix.from_vec([mousex, -mousey]));
 					$('#hoversample').css('background-color',
 						`rgba(${127.5 * raw_out[0] + 127.5}, ${127.5 * raw_out[1] + 127.5},`
 						+ `${127.5 * raw_out[2] + 127.5}, ${0.5 * raw_out[3] + 0.5})`);

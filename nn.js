@@ -1,58 +1,87 @@
 var NN = (function () {
 
-	// vector arithmetic
-	function dot(v, w) {
-		// dot product, truncating to shorter vector
-		var l = Math.min(v.length, w.length);
-		var result = 0;
-		for (var i = 0; i < l; ++i) {
-			result += v[i] * w[i];
+	function prod(numbers) {
+		var answer = 1;
+		for (var i = 0; i < numbers.length; ++i) {
+			answer *= numbers[i];
 		}
-		return result;
+		return answer;
 	}
-	function vplus(v, w) {
-		return v.map((x, i) => x + w[i]);
-	}
-	function vminus(v, w) {
-		return v.map((x, i) => x - w[i]);
-	}
-	function vtimes(v, w) {
-		return v.map((x, i) => x * w[i]);
-	}
-	function vscale(a, v) {
-		return v.map((x) => a * x);
-	}
-	function tscale(a, t) {
-		if (t instanceof Array) {
-			return t.map((x) => tscale(a, x));
+
+	var ArrayType = Float64Array;
+	function Matrix(rows, cols, existing_storage) {
+		this.rows = rows;
+		this.cols = cols;
+		if (typeof existing_storage === 'undefined') {
+			this.storage = new ArrayType(rows * cols);
+		} else if (existing_storage instanceof ArrayType) {
+			this.storage = new ArrayType(existing_storage);
 		} else {
-			return a * t;
+			this.storage = existing_storage;
 		}
 	}
-	function tadd(t1, t2) {
-		if (t1 instanceof Array) {
-			return t1.map((x, i) => tadd(x, t2[i]));
-		} else {
-			return t1 + t2;
-		}
-	}
-	function otimes(v, w) {
-		return v.map((vi) => vscale(vi, w));
-	}
-	function vcopy(v) {
-		return v.map((x) => x);
-	}
-	function combo_rows(v, m) {
-		// return w = vT m
-		if (v.length < 1) { return []; }
-		var w = vscale(v[0], m[0]);
-		for (var i = 1; i < v.length; ++i) {
-			m[i].forEach(function (mij, j) {
-				w[j] += v[i] * mij;
-			});
-		}
-		return w;
-	}
+	Matrix.from_vec = function from_vec(v) {
+		return new Matrix(v.length, 1, v);
+	};
+	Matrix.prototype = {
+		// wrappers around TypedArray methods
+		slice: function slice() {
+			return new Matrix(this.rows, this.cols, this.storage.slice());
+		},
+		map: function map(f) {
+			return new Matrix(this.rows, this.cols, this.storage.map(f));
+		},
+		imap: function imap(f) {
+			for (var i = 0; i < this.storage.length; ++i) {
+				this.storage[i] = f(this.storage[i], i, this.storage);
+			}
+		},
+		// matrix entry access
+		index: function index(row, col) {
+			return row * this.cols + col;
+		},
+		read: function read(row, col) {
+			return this.storage[row * this.cols + col];
+		},
+		write: function write(row, col, value) {
+			return this.storage[row * this.cols + col] = value;
+		},
+		// matrix multiplication
+		matmul: function matmul(right, out) {
+			if (typeof out === 'undefined') {
+				out = new Matrix(this.rows, right.cols);
+			}
+
+			// footgun 1: assume matrices are zero-padded out to infinity.
+			// This gives up dimension-checking
+			// but enables using extra cols to store whatever we like.
+			var dimension = Math.min(this.cols, right.rows);
+
+			for (var row = 0; row < out.rows; ++row) {
+				var row_start = row * this.cols;
+				for (var col = 0; col < out.cols; ++col) {
+					// footgun 2: Add to outparam because that's usually what
+					// we're doing. If you want to clobber, zero it yourself.
+					var cell = out.read(row, col);
+					for (var i = 0; i < dimension; ++i) {
+						cell += this.storage[row_start + i] * right.storage[i * right.cols + col];
+					}
+					out.write(row, col, cell);
+				}
+			}
+			return out;
+		},
+		// pointwise arithmetic
+		pointwise_sub: function pointwise_sub(right, out) {
+			if (typeof out === 'undefined') {
+				out = new Matrix(this.rows, this.cols);
+			}
+			for (var i = 0; i < out.storage.length; ++i) {
+				out.storage[i] = this.storage[i] - right.storage[i];
+			}
+			return out;
+		},
+	};
 
 	function sample_normal() {
 		var r = Math.sqrt(Math.abs(Math.log(1 - Math.random())));
@@ -64,17 +93,24 @@ var NN = (function () {
 		// bias is the last column of weight
 		var randomize = () => init_scale * sample_normal() / Math.sqrt(dim_from);
 		this.activation = activation;
-		this.weight = [];
-		for (var i = 0; i < dim_to; ++i) {
-			var weight_row = [];
-			for (var j = 0; j <= dim_from; ++j) {
-				weight_row.push(randomize());
+		this.weight = new Matrix(dim_to, dim_from + 1);
+		for (var row = 0; row < dim_to; ++row) {
+			for (var col = 0; col <= dim_from; ++col) {
+				this.weight.write(row, col, randomize());
 			}
-			this.weight.push(weight_row);
 		}
 	}
-	Layer.prototype.call = function (v) {
-		return this.weight.map((wi) => wi[v.length] + dot(wi, v));
+	Layer.prototype.call = function (v, out) {
+		out = this.weight.matmul(v, out);
+		// add bias terms
+		for (var row = 0; row < out.rows; ++row) {
+			var bias = this.weight.read(row, v.rows);
+			var row_end = (row + 1) * out.cols;
+			for (var i = row * out.cols; i < row_end; ++i) {
+				out.storage[i] += bias;
+			}
+		}
+		return out;
 	};
 
 	function Net(dim_from, layer_sizes, dim_to, activation, init_scale) {
@@ -105,30 +141,36 @@ var NN = (function () {
 			layer_inputs.push(layer_outputs[i].map(layers[i].activation));
 		}
 		// derivative of L2 objective w.r.t. current position in the network
-		var dee = vminus(layer_inputs[layers.length], y);
+		var output_gradient = layer_inputs[layers.length].pointwise_sub(y);
 		for (var i = layers.length - 1; i >= 0; --i) {
 			// absorb activation function derivative pointwise
-			layer_outputs[i].forEach(function (o, j) {
-				dee[j] *= layers[i].activation.d(o);
-			});
+			output_gradient.imap((d, j) => d * layers[i].activation.d(layer_outputs[i].read(j, 0)));
 			// output_i = w_ij [input_j, 1]
 			//     d output_i = dw_ij [input_j, 1] + w_ij d input_j
-			//     d objective / dw_ij = dee_i [input_j, 1]
-			layer_inputs[i].push(1);  // capture bias term
-			layer_gradients[i] = otimes(dee, layer_inputs[i]);
-			// d objective / d input_j = dee_i w_ij (without last column)
-			dee = combo_rows(dee, layers[i].weight);
-			dee.pop();  // drop bias term
+			//     d objective / dw_ij = output_gradient_i [input_j, 1]
+			var grad = layer_gradients[i] = new Matrix(output_gradient.rows, layer_inputs[i].rows + 1);
+			for (var row = 0; row < grad.rows; ++row) {
+				for (var col = 0; col < layer_inputs[i].rows; ++col) {
+					grad.write(row, col, output_gradient.read(row, 0) * layer_inputs[i].read(col, 0));
+				}
+				grad.write(row, layer_inputs[i].rows, output_gradient.read(row, 0));  // bias term
+			}
+			// d objective / d input_j = output_gradient_i w_ij (without last column)
+			var new_output_gradient = new Matrix(layers[i].weight.cols - 1, 1);
+			for (var row = 0; row < new_output_gradient.rows; ++row) {
+				for (var dimension = 0; dimension < output_gradient.rows; ++dimension) {
+					new_output_gradient.storage[row] += output_gradient.storage[dimension] * layers[i].weight.read(dimension, row);
+				}
+			}
+			output_gradient = new_output_gradient;
 		}
 		return layer_gradients;
 	};
 	Net.prototype.zerograd = function () {
 		return this.layers.map(function (layer) {
-			return layer.weight.map(function (row) {
-				return row.map(function (item) {
-					return 0;
-				})
-			})	
+			return layer.weight.map(function (w) {
+				return 0;
+			});
 		});
 	};
 	Net.prototype.as_2d_shader = function () {
@@ -152,8 +194,8 @@ var NN = (function () {
 			"    mediump vec2 weight_coord = vec2(1./1024., 1./1024.);",
 		);
 		for (var ell = 0; ell < this.layers.length; ++ell) {
-			var dim_from = this.layers[ell].weight[0].length - 1;
-			var dim_to = this.layers[ell].weight.length;
+			var dim_from = this.layers[ell].weight.cols - 1;
+			var dim_to = this.layers[ell].weight.rows;
 			lines.push(
 				`mediump float v${ell+1}[${dim_to}];`,
 				`for (int i = 0; i < ${dim_to}; ++i) {`,
@@ -240,6 +282,7 @@ var NN = (function () {
 	agnesi.glsl = "(mediump float x) { return 1. / (1. + x * x); }";
 
 	return {
+		"Matrix": Matrix,
 		"Net": Net,
 		"relu": relu,
 		"tanh": tanh,
