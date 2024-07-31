@@ -21,7 +21,7 @@ var NN = (function () {
 		}
 	}
 	Matrix.from_vec = function from_vec(v) {
-		return new Matrix(v.length, 1, v);
+		return new Matrix(1, v.length, v);
 	};
 	Matrix.prototype = {
 		// wrappers around TypedArray methods
@@ -47,6 +47,31 @@ var NN = (function () {
 			return this.storage[row * this.cols + col] = value;
 		},
 		// matrix multiplication
+		contractlast: function contractlast(right, out) {
+			if (typeof out === 'undefined') {
+				out = new Matrix(this.rows, right.rows);
+			}
+
+			// footgun 1: assume matrices are zero-padded out to infinity.
+			// This gives up dimension-checking
+			// but enables using extra cols to store whatever we like.
+			var dimension = Math.min(this.cols, right.cols);
+
+			for (var row = 0; row < out.rows; ++row) {
+				var row_start = row * this.cols;
+				for (var col = 0; col < out.cols; ++col) {
+					// footgun 2: Add to outparam because that's usually what
+					// we're doing. If you want to clobber, zero it yourself.
+					var col_start = col * right.cols;
+					var cell = out.read(row, col);
+					for (var i = 0; i < dimension; ++i) {
+						cell += this.storage[row_start + i] * right.storage[col_start + i];
+					}
+					out.write(row, col, cell);
+				}
+			}
+			return out;
+		},
 		matmul: function matmul(right, out) {
 			if (typeof out === 'undefined') {
 				out = new Matrix(this.rows, right.cols);
@@ -101,13 +126,13 @@ var NN = (function () {
 		}
 	}
 	Layer.prototype.call = function (v, out) {
-		out = this.weight.matmul(v, out);
+		out = v.contractlast(this.weight, out);
 		// add bias terms
-		for (var row = 0; row < out.rows; ++row) {
-			var bias = this.weight.read(row, v.rows);
-			var row_end = (row + 1) * out.cols;
-			for (var i = row * out.cols; i < row_end; ++i) {
-				out.storage[i] += bias;
+		for (var i_out = 0; i_out < out.cols; ++i_out) {
+			var bias = this.weight.read(i_out, v.cols);
+			var row_end = (i_out + 1) * out.cols;
+			for (var i_sample = 0; i_sample < out.rows; ++i_sample) {
+				out.storage[i_sample * out.cols + i_out] += bias;
 			}
 		}
 		return out;
@@ -136,6 +161,7 @@ var NN = (function () {
 		var layer_gradients = new Array(layers.length);  // T(objective) <- T(bias, weight)
 		var layer_inputs = [x.slice()];
 		var layer_outputs = [];
+		var num_samples = x.rows;
 		for (var i = 0; i < layers.length; ++i) {
 			layer_outputs.push(layers[i].call(layer_inputs[i]));
 			layer_inputs.push(layer_outputs[i].map(layers[i].activation));
@@ -144,22 +170,34 @@ var NN = (function () {
 		var output_gradient = layer_inputs[layers.length].pointwise_sub(y);
 		for (var i = layers.length - 1; i >= 0; --i) {
 			// absorb activation function derivative pointwise
-			output_gradient.imap((d, j) => d * layers[i].activation.d(layer_outputs[i].read(j, 0)));
+			output_gradient.imap((d, j) => d * layers[i].activation.d(layer_outputs[i].storage[j]));
 			// output_i = w_ij [input_j, 1]
 			//     d output_i = dw_ij [input_j, 1] + w_ij d input_j
 			//     d objective / dw_ij = output_gradient_i [input_j, 1]
-			var grad = layer_gradients[i] = new Matrix(output_gradient.rows, layer_inputs[i].rows + 1);
+			var grad = layer_gradients[i] = new Matrix(output_gradient.cols, layer_inputs[i].cols + 1);
 			for (var row = 0; row < grad.rows; ++row) {
-				for (var col = 0; col < layer_inputs[i].rows; ++col) {
-					grad.write(row, col, output_gradient.read(row, 0) * layer_inputs[i].read(col, 0));
+				for (var col = 0; col < layer_inputs[i].cols; ++col) {
+					var g = 0;
+					for (var sample = 0; sample < num_samples; ++sample) {
+						g += output_gradient.read(sample, row) * layer_inputs[i].read(sample, col);
+					}
+					grad.write(row, col, g);
 				}
-				grad.write(row, layer_inputs[i].rows, output_gradient.read(row, 0));  // bias term
+				var g = 0;
+				for (var sample = 0; sample < num_samples; ++sample) {
+					g += output_gradient.read(sample, row);  // bias term
+				}
+				grad.write(row, layer_inputs[i].cols, g);
 			}
 			// d objective / d input_j = output_gradient_i w_ij (without last column)
-			var new_output_gradient = new Matrix(layers[i].weight.cols - 1, 1);
-			for (var row = 0; row < new_output_gradient.rows; ++row) {
-				for (var dimension = 0; dimension < output_gradient.rows; ++dimension) {
-					new_output_gradient.storage[row] += output_gradient.storage[dimension] * layers[i].weight.read(dimension, row);
+			var new_output_gradient = new Matrix(num_samples, layers[i].weight.cols - 1);
+			for (var sample = 0; sample < num_samples; ++sample) {
+				for (var col = 0; col < new_output_gradient.cols; ++col) {
+					var g = 0;
+					for (var j = 0; j < output_gradient.cols; ++j) {
+						g += output_gradient.read(sample, j) * layers[i].weight.read(j, col);
+					}
+					new_output_gradient.write(sample, col, g);
 				}
 			}
 			output_gradient = new_output_gradient;

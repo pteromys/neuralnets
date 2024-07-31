@@ -351,15 +351,17 @@
 						$('#main1d').css('display', 'none');
 					}
 					ref = function (x) {
-						var imgx = Math.min(Math.max(0, Math.floor((0.5 + 0.5 * x.storage[0]) * ctmp.width)), ctmp.width - 1);
-						var imgy = Math.min(Math.max(0, Math.floor((0.5 - 0.5 * x.storage[1]) * ctmp.height)), ctmp.height - 1);
-						var idx = 4 * (ctmp.width * imgy + imgx);
-						return NN.Matrix.from_vec([
-							image_data.data[idx] * 2 / 255 - 1,
-							image_data.data[idx + 1] * 2 / 255 - 1,
-							image_data.data[idx + 2] * 2 / 255 - 1,
-							image_data.data[idx + 3] * 2 / 255 - 1,
-						]);
+						var answer = new NN.Matrix(x.rows, 4);
+						for (let row = 0; row < x.rows; ++row) {
+							var imgx = Math.min(Math.max(0, Math.floor((0.5 + 0.5 * x.read(row, 0)) * ctmp.width)), ctmp.width - 1);
+							var imgy = Math.min(Math.max(0, Math.floor((0.5 - 0.5 * x.read(row, 1)) * ctmp.height)), ctmp.height - 1);
+							var idx = 4 * (ctmp.width * imgy + imgx);
+							answer.write(row, 0, image_data.data[idx] * 2 / 255 - 1);
+							answer.write(row, 1, image_data.data[idx + 1] * 2 / 255 - 1);
+							answer.write(row, 2, image_data.data[idx + 2] * 2 / 255 - 1);
+							answer.write(row, 3, image_data.data[idx + 3] * 2 / 255 - 1);
+						}
+						return answer;
 					};
 					requestFrame();
 				})
@@ -375,11 +377,19 @@
 				loadImageURL(url);
 			});
 
-			function random_1d() {
-				return NN.Matrix.from_vec([4 * Math.random() - 2]);
+			function random_1d(minibatch_size) {
+				var answer = new NN.Matrix(minibatch_size, 1);
+				for (var i = 0; i < answer.storage.length; ++i) {
+					answer.storage[i] = 4 * Math.random() - 2;
+				}
+				return answer;
 			}
-			function random_2d() {
-				return NN.Matrix.from_vec([2 * Math.random() - 1, 2 * Math.random() - 1]);
+			function random_2d(minibatch_size) {
+				var answer = new NN.Matrix(minibatch_size, 2);
+				for (var i = 0; i < answer.storage.length; ++i) {
+					answer.storage[i] = 2 * Math.random() - 1;
+				}
+				return answer;
 			}
 			function frame() {
 				frame_is_queued = false;
@@ -387,7 +397,7 @@
 					var random_x = (dimension == 2) ? random_2d : random_1d;
 					var learning_rate = parseFloat($('#learning_rate').val());
 					var minibatch_size = read_batch_size();
-					var x = random_x();
+					var x = random_x(minibatch_size);
 					var y = ref(x);
 					var l2 = dist2(net.call(x).storage, y.storage);
 					var grad = net.l2grad(x, y);
@@ -396,18 +406,6 @@
 							if (!isFinite(g)) { throw "Whoops: " + g; }
 						});
 					});
-					for (var j = 1; j < minibatch_size; ++j) {
-						x = random_x();
-						y = ref(x);
-						var new_grad = net.l2grad(x, y);
-						l2 += dist2(net.call(x).storage, y.storage);
-						new_grad.forEach((layer_gradient, i1) => {
-							layer_gradient.storage.forEach((g, i2) => {
-								if (!isFinite(g)) { throw "Whoops: " + g; }
-								grad[i1].storage[i2] += g;
-							});
-						});
-					}
 					var use_adam = $('#optimizer').val() == 'adam';
 					var use_adamw = $('#optimizer').val() == 'adamw';
 					var use_sgdm = $('#optimizer').val() == 'sgdm';
