@@ -156,11 +156,12 @@ var NN = (function () {
 		}
 		return v;
 	};
-	Net.prototype.l2grad = function (x, y) {
+	Net.prototype.l2grad = function (x, y, include_byproducts) {
 		var layers = this.layers;
 		var layer_gradients = new Array(layers.length);  // T(objective) <- T(bias, weight)
 		var layer_inputs = [x.slice()];
 		var layer_outputs = [];
+		var output_gradients = [];
 		var num_samples = x.rows;
 		for (var i = 0; i < layers.length; ++i) {
 			layer_outputs.push(layers[i].call(layer_inputs[i]));
@@ -200,9 +201,20 @@ var NN = (function () {
 					new_output_gradient.write(sample, col, g);
 				}
 			}
+			if (include_byproducts) {
+				output_gradients.unshift(output_gradient);
+			}
 			output_gradient = new_output_gradient;
 		}
-		return layer_gradients;
+		if (include_byproducts) {
+			return {
+				gradient: layer_gradients,
+				activations: layer_inputs.slice(1),
+				output_gradients: output_gradients,
+			};
+		} else {
+			return layer_gradients;
+		}
 	};
 	Net.prototype.zerograd = function () {
 		return this.layers.map(function (layer) {
@@ -322,6 +334,7 @@ var NN = (function () {
 	return {
 		"Matrix": Matrix,
 		"Net": Net,
+		"sample_normal": sample_normal,
 		"relu": relu,
 		"tanh": tanh,
 		"nop": nop,

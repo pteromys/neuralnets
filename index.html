@@ -162,6 +162,9 @@
 			window.net = new NN.Net(1, [8, 8], 1, NN.relu, 1);
 			var momentum = net.zerograd();
 			var energy = net.zerograd();  // curvature? bumpiness?
+			var cell_age = net.layers.map(layer => Array.from({length: layer.weight.rows}, _ => 0));
+			var cell_influence = cell_age.map(ages => ages.slice());
+			var layer_reroll_charge = net.layers.map(layer => 0);
 			var momentum_newness = 1;
 			var energy_newness = 1;
 			var ref = function (x) { return x; }
@@ -284,6 +287,16 @@
 			$('#log10_batch_size').on('change', update_batch_size_title);
 			$('#log10_batch_size').on('mousemove', update_batch_size_title);
 
+			function read_cell_reroll_rate() {
+				var reroll_rate = Math.pow(10, parseFloat($('#log10_cell_reroll_rate').val()));
+				return reroll_rate <= 0.0011 ? 0 : reroll_rate;
+			}
+			function update_cell_reroll_rate_title () {
+				$('#log10_cell_reroll_rate').attr('title', read_cell_reroll_rate().toFixed(3));
+			}
+			$('#log10_cell_reroll_rate').on('change', update_cell_reroll_rate_title);
+			$('#log10_cell_reroll_rate').on('mousemove', update_cell_reroll_rate_title);
+
 			function reroll() {
 				var layers = validate_layers_input();
 				if (layers === null) { return; }
@@ -299,6 +312,9 @@
 					NN[activation_str], parseFloat($('#init_scale').val()));
 				momentum = net.zerograd();
 				energy = net.zerograd();
+				cell_age = net.layers.map(layer => Array.from({length: layer.weight.rows}, _ => 0));
+				cell_influence = cell_age.map(ages => ages.slice());
+				layer_reroll_charge = net.layers.map(layer => 0);
 				momentum_newness = energy_newness = 1;
 				if (dimension == 2) {
 					handles2d = prep_2d();
@@ -400,7 +416,8 @@
 					var x = random_x(minibatch_size);
 					var y = ref(x);
 					var l2 = dist2(net.call(x).storage, y.storage);
-					var grad = net.l2grad(x, y);
+					var grad_data = net.l2grad(x, y, true);
+					var grad = grad_data.gradient;
 					grad.forEach((layer_gradient, i1) => {
 						layer_gradient.storage.forEach((g, i2) => {
 							if (!isFinite(g)) { throw "Whoops: " + g; }
@@ -432,6 +449,49 @@
 							if (!isFinite(net.layers[i1].weight.storage[i2])) { throw "Whoops: " + net.layers[i1].weight.storage[i2]; }
 						});
 					});
+					var cell_reroll_rate = read_cell_reroll_rate();
+					if (cell_reroll_rate > 0) {
+						var cell_min_age = 10 / cell_reroll_rate;
+						var influence_decay_rate = Math.min(1, cell_reroll_rate * 4);
+						var sample_weights = NN.Matrix.from_vec(Array.from({length: minibatch_size}, _ => 1/minibatch_size));
+						var output_norm2s = grad_data.activations.map(layer_activation => sample_weights.matmul(layer_activation.map(a => a * a)));
+						var input_sensitivities = net.layers.map(layer =>
+							NN.Matrix
+							.from_vec(Array.from({length: layer.weight.rows}, _ => 1))
+							.matmul(layer.weight.map(w => w * w)));
+						net.layers.slice(0, net.layers.length - 1).forEach((layer, i1) => {
+							// compute influence score for each cell
+							var output_sensitivity = input_sensitivities[i1 + 1];
+							var instantaneous_influence = output_norm2s[i1].storage.map((x, i2) => x * output_sensitivity.storage[i2]);
+							var influence = cell_influence[i1] = cell_influence[i1].map((x, i2) => x * (1 - influence_decay_rate) + instantaneous_influence[i2] * influence_decay_rate);
+							var mean_influence = influence.reduce((a, x) => a + x, 0) / influence.length;
+							var eligibility = cell_age[i1].map((a, i2) => a >= cell_min_age && influence[i2] <= mean_influence / 16);
+							// track ages and reroll rates
+							for (var i2 = 0; i2 < cell_age[i1].length; ++i2) {
+								cell_age[i1][i2] += 1;
+							}
+							var first_eligible = eligibility.indexOf(true);
+							if (first_eligible < 0) { return; }
+							layer_reroll_charge[i1] += cell_reroll_rate;
+							if (layer_reroll_charge[i1] < 1) { return; }
+							// pick least influential cell
+							var arg_min_influence = influence.reduce((a, x, i2) => eligibility[i2] && x < influence[a] ? i2 : a, first_eligible);
+							// rerandomize inputs to cell
+							var layer_scale = Math.pow(parseFloat($('#init_scale').val()), 1 / (net.layers.length + 1)) / Math.sqrt(layer.weight.cols - 1);
+							for (var i2 = 0; i2 < layer.weight.cols; ++i2) {
+								layer.weight.write(arg_min_influence, i2, layer_scale * NN.sample_normal());
+								momentum[i1].write(arg_min_influence, i2, 0);
+							}
+							// zero outputs from cell
+							for (var i2 = 0; i2 < net.layers[i1].weight.rows; ++i2) {
+								net.layers[i1 + 1].weight.write(i2, arg_min_influence, 0);
+								momentum[i1 + 1].write(i2, arg_min_influence, 0);
+							}
+							layer_reroll_charge[i1] = 0;
+							cell_age[i1][arg_min_influence] = 0;
+							cell_influence[i1] = cell_influence[i1].map(_ => 0);
+						});
+					}
 					l2 /= minibatch_size;
 					++step_count;
 					$('#stepcounter').text(step_count);
@@ -595,7 +655,7 @@
 			</div>
 			<a id="helplink" class="icon" title="Help" href="#help">?</a>
 		</div>
-		<div class="formrow" style="display: grid; grid: 0.25fr 0.25fr 0.25fr 0.25fr / auto-flow; align-items: center; margin: 0.5em; gap: 0em 0.5em;">
+		<div class="formrow" style="display: grid; grid: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr / auto-flow; align-items: center; margin: 0.5em; gap: 0em 0.5em;">
 			<h2>Learning options</h2>
 			<select id="optimizer" title="optimizer">
 				<option value="adam">Adam</option>
@@ -605,6 +665,7 @@
 			</select>
 			<div><label for="learning_rate" title="small steps" class="icon">&#x1f43e;</label><input type="range" id="learning_rate" min="0.001" max="1" step="any" value="0.3" /><label for="learning_rate" title="big steps" class="icon">&#x1f463;</label></div>
 			<div><label for="log10_batch_size" title="1 sample per step" class="icon">&#x273d;</label><input type="range" id="log10_batch_size" min="0" max="3" step="any" value="2" /><label for="log10_batch_size" title="1000 samples per step" class="icon">&#x2042;</label></div>
+			<div><label for="log10_cell_reroll_rate" title="never reroll cells" class="icon">&#x273d;</label><input type="range" id="log10_cell_reroll_rate" min="-3" max="0" step="any" value="-1" /><label for="cell_reroll_rate" title="reroll a cell per layer every step" class="icon">&#x2042;</label></div>
 			<h2>Reroll options</h2>
 			<select id="activation" title="activation function (a.k.a. nonlinearity)">
 				<option value="tanh">tanh</option>
