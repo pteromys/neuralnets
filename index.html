@@ -53,7 +53,7 @@
 		/* form element styling */
 		input[type="text"], textarea { border-radius: 0.1em; }
 		label { display: inline-block; vertical-align: middle; }
-		label.icon { font-size: 200%; }
+		label.icon { font-size: 200%; line-height: 1; }
 		button, #helplink {
 			font-size: 200%;
 			line-height: 1em;
@@ -292,7 +292,9 @@
 				return reroll_rate <= 0.0011 ? 0 : reroll_rate;
 			}
 			function update_cell_reroll_rate_title () {
-				$('#log10_cell_reroll_rate').attr('title', read_cell_reroll_rate().toFixed(3));
+				var display_rate = (read_cell_reroll_rate() * 100).toFixed(1) + '%';
+				$('#log10_cell_reroll_rate').attr('title', display_rate);
+				$('#cell_reroll_rate_display').text(display_rate);
 			}
 			$('#log10_cell_reroll_rate').on('change', update_cell_reroll_rate_title);
 			$('#log10_cell_reroll_rate').on('mousemove', update_cell_reroll_rate_title);
@@ -664,7 +666,16 @@
 			</select>
 			<div><label for="learning_rate" title="small steps" class="icon">&#x1f43e;</label><input type="range" id="learning_rate" min="0.001" max="1" step="any" value="0.3" /><label for="learning_rate" title="big steps" class="icon">&#x1f463;</label></div>
 			<div><label for="log10_batch_size" title="1 sample per step" class="icon">&#x273d;</label><input type="range" id="log10_batch_size" min="0" max="3" step="any" value="2" /><label for="log10_batch_size" title="1000 samples per step" class="icon">&#x2042;</label></div>
-			<div><label for="log10_cell_reroll_rate" title="never reroll cells" class="icon">&#x273d;</label><input type="range" id="log10_cell_reroll_rate" min="-3" max="0" step="any" value="-1.5" /><label for="cell_reroll_rate" title="reroll a cell per layer every step" class="icon">&#x2042;</label></div>
+			<div>
+				<label for="log10_cell_reroll_rate" title="dormant cell reroll rate" class="icon">
+					<svg viewBox="0 0 128 128" width="128" height="128" role="img" preserveAspectRatio="xMidYMid meet" style="width: 1em; height: 1em; vertical-align: middle;">
+						<title>dormant cell reroll rate</title>
+						<path
+							style="fill:currentColor;fill-opacity:1;fill-rule:nonzero;stroke:none"
+							d="M 63.878906 8 A 56 56 0 0 0 22.628906 26.257812 L 4.1816406 15.607422 L 7.8945312 73.177734 L 59.607422 47.607422 L 40.605469 36.636719 A 36 36 0 0 1 82 32.822266 A 36 36 0 0 1 95.177734 82 A 36 36 0 0 1 46 95.177734 A 36 36 0 0 1 32.824219 82 L 15.501953 92 A 56 56 0 0 0 78.494141 118.0918 A 56 56 0 0 0 120 64 A 56 56 0 0 0 78.494141 9.9082031 A 56 56 0 0 0 63.878906 8 z M 64 52 A 12 12 0 0 0 52 64 A 12 12 0 0 0 64 76 A 12 12 0 0 0 76 64 A 12 12 0 0 0 64 52 z " />
+					</svg>
+				</label><input type="range" id="log10_cell_reroll_rate" min="-3" max="0" step="any" value="-1.5" /><div id="cell_reroll_rate_display" style="width: 2em; display: inline-block; vertical-align: baseline;">3.2%</div>
+			</div>
 			<h2>Reroll options</h2>
 			<select id="activation" title="activation function (a.k.a. nonlinearity)">
 				<option value="tanh">tanh</option>
