@@ -319,17 +319,27 @@ var NN = (function () {
 	softplus.d = function (x) { return 1 / (1 + Math.exp(-x)); };
 	softplus.glsl = "(mediump float x) { return x < 9.704 ? log(1. + exp(x)) : x; }";
 
+	// magic constants are from https://arxiv.org/abs/1706.02515
+	// see for discussion: https://old.reddit.com/r/MachineLearning/comments/6g5tg1/
+	function selu(x) { return 1.0507 * (x >= 0 ? x : 1.6733 * Math.exp(x) - 1.6733); }
+	selu.d = function (x) { return 1.0507 * (x >= 0 ? 1 : 1.6733 * Math.exp(x)); };
+	selu.glsl = "(mediump float x) { return 1.0507 * (x >= 0. ? x : 1.6733 * exp(x) - 1.6733); }";
+
 	function square(x) { return x * x; }
-	square.d = function (x) { return 2 * x; }
+	square.d = function (x) { return 2 * x; };
 	square.glsl = "(mediump float x) { return x * x; }";
 
 	function gaussian(x) { return Math.exp(-0.5 * x * x); }
-	gaussian.d = function (x) { return -x * gaussian(x); }
+	gaussian.d = function (x) { return -x * gaussian(x); };
 	gaussian.glsl = "(mediump float x) { return exp(-0.5 * x * x); }";
 
 	function agnesi(x) { return 1 / (1 + x * x); }
-	agnesi.d = function (x) { var a = agnesi(x); return -2 * x * a * a; }
+	agnesi.d = function (x) { var a = agnesi(x); return -2 * x * a * a; };
 	agnesi.glsl = "(mediump float x) { return 1. / (1. + x * x); }";
+
+	function arctan(x) { return Math.atan(x); }
+	arctan.d = agnesi;
+	arctan.glsl = "(mediump float x) { return atan(x); }";
 
 	return {
 		"Matrix": Matrix,
@@ -340,9 +350,11 @@ var NN = (function () {
 		"nop": nop,
 		"leaky_relu": leaky_relu(0.2),
 		"softplus": softplus,
+		"selu": selu,
 		"abs": leaky_relu(-1),
 		"square": square,
 		"gaussian": gaussian,
+		"arctan": arctan,
 		"agnesi": agnesi,
 	};
 })();
